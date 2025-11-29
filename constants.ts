@@ -30,11 +30,11 @@ export const COLORS = {
 // Gameplay Balance
 export const PLAYER_HP = 100;
 export const SWORD_DAMAGE = 25;
-export const PLAYER_SPEED = 400; // Slightly faster for larger map
+export const PLAYER_SPEED = 150; // Very slow movement speed
 export const PLAYER_BLOCK_SPEED_MOD = 0.4; // Slower when blocking
-export const PLAYER_DODGE_SPEED = 900; // Increased for longer jump
+export const PLAYER_DODGE_SPEED = 1200; // Faster and longer dodge
 export const PLAYER_DODGE_DURATION = 0.5; // Increased duration
-export const PLAYER_DODGE_COOLDOWN = 1.2;
+export const PLAYER_DODGE_COOLDOWN = 5.0; // Much longer cooldown for less frequent dodges
 export const KNOCKBACK_FORCE = 1800; // Increased for stronger push
 export const KNOCKBACK_DECAY = 0.9; // Friction for knockback
 

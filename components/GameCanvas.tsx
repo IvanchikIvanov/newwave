@@ -40,7 +40,8 @@ const GameCanvas: React.FC = () => {
     status: 'MENU',
     playerCount: 0,
     assetsLoaded: false,
-    winner: ''
+    winner: '',
+    error: ''
   });
 
   const [inputRoomId, setInputRoomId] = useState('');
@@ -62,10 +63,19 @@ const GameCanvas: React.FC = () => {
 
   const createRoom = () => {
     if (peerRef.current) peerRef.current.destroy();
-    const peer = new Peer(null, { debug: 1 });
+    const peer = new Peer(null, { 
+      debug: 2,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      }
+    });
     peerRef.current = peer;
 
     peer.on('open', (id: string) => {
+        console.log('Peer opened with ID:', id);
         setPeerId(id);
         setRoomId(id);
         setIsHost(true);
@@ -80,9 +90,20 @@ const GameCanvas: React.FC = () => {
         };
     });
 
+    peer.on('error', (err: any) => {
+        console.error('Peer error:', err);
+        if (err.type === 'peer-unavailable') {
+            console.log('Peer unavailable, retrying...');
+        } else if (err.type === 'network') {
+            console.log('Network error, check connection');
+        }
+    });
+
     peer.on('connection', (conn: any) => {
+        console.log('New connection from:', conn.peer);
         hostConnsRef.current.push(conn);
         conn.on('open', () => {
+             console.log('Connection opened from:', conn.peer);
              const newPid = conn.peer;
              const idx = Object.keys(stateRef.current.players).length;
              
@@ -93,7 +114,7 @@ const GameCanvas: React.FC = () => {
              setUiState(prev => ({ ...prev, playerCount: Object.keys(stateRef.current.players).length }));
              try {
                 conn.send({ type: 'STATE', payload: stateRef.current });
-             } catch (e) { console.error(e); }
+             } catch (e) { console.error('Send error:', e); }
         });
 
         conn.on('data', (data: any) => {
@@ -103,7 +124,12 @@ const GameCanvas: React.FC = () => {
             }
         });
 
+        conn.on('error', (err: any) => {
+            console.error('Connection error:', err);
+        });
+
         conn.on('close', () => {
+            console.log('Connection closed from:', conn.peer);
             const pid = conn.peer;
             delete stateRef.current.players[pid];
             delete remoteInputsRef.current[pid];
@@ -117,18 +143,28 @@ const GameCanvas: React.FC = () => {
     if (!inputRoomId) return;
     if (peerRef.current) peerRef.current.destroy();
     
-    const peer = new Peer(null, { debug: 1 });
+    const peer = new Peer(null, { 
+      debug: 2,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      }
+    });
     peerRef.current = peer;
 
     peer.on('open', (myId: string) => {
+        console.log('Peer opened with ID:', myId);
         setPlayerId(myId);
         playerIdRef.current = myId;
         setPeerId(myId);
         
-        const conn = peer.connect(inputRoomId);
+        const conn = peer.connect(inputRoomId, { reliable: true });
         connRef.current = conn;
 
         conn.on('open', () => {
+            console.log('Connection opened to:', inputRoomId);
             setIsHost(false);
             setRoomId(inputRoomId);
             setUiState(prev => ({ ...prev, status: 'LOBBY' }));
@@ -145,6 +181,26 @@ const GameCanvas: React.FC = () => {
                 }));
             }
         });
+
+        conn.on('error', (err: any) => {
+            console.error('Connection error:', err);
+        });
+
+        conn.on('close', () => {
+            console.log('Connection closed');
+            setUiState(prev => ({ ...prev, status: 'MENU' }));
+        });
+    });
+
+    peer.on('error', (err: any) => {
+        console.error('Peer error:', err);
+        if (err.type === 'peer-unavailable') {
+            setUiState(prev => ({ ...prev, error: 'Комната не найдена. Проверь ID комнаты.', status: 'MENU' }));
+        } else if (err.type === 'network') {
+            setUiState(prev => ({ ...prev, error: 'Ошибка сети. Проверь подключение.', status: 'MENU' }));
+        } else {
+            setUiState(prev => ({ ...prev, error: `Ошибка: ${err.message || err.type}`, status: 'MENU' }));
+        }
     });
   };
 
@@ -583,12 +639,18 @@ const GameCanvas: React.FC = () => {
                             <code className="text-2xl font-bold tracking-widest text-yellow-400 select-all">{roomId}</code>
                             <button onClick={() => navigator.clipboard.writeText(roomId)} className="p-2 hover:bg-zinc-700 rounded"><Copy size={16} /></button>
                         </div>
+                        <p className="text-xs text-gray-500 mt-2">Открой эту страницу в другом окне/устройстве и введи этот ID</p>
                     </div>
                 )}
                 <div className="mb-8 flex items-center gap-2 text-gray-300 animate-pulse">
                     <Users size={20} />
                     <span>{uiState.playerCount} Gladiator(s) Ready</span>
                 </div>
+                {uiState.error && (
+                    <div className="mb-4 text-red-500 text-sm bg-red-900/30 px-4 py-2 rounded">
+                        {uiState.error}
+                    </div>
+                )}
                 {isHost && uiState.playerCount > 1 && (
                     <button onClick={startHostedGame} className="px-8 py-4 bg-green-700 hover:bg-green-600 text-white font-bold text-xl rounded flex items-center gap-2 animate-bounce">
                         <Play size={24} /> FIGHT!
