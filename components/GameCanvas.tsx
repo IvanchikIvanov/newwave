@@ -119,8 +119,8 @@ const GameCanvas: React.FC = () => {
 
         conn.on('data', (data: any) => {
             if (data.type === 'INPUT') {
-                const pid = data.playerId || conn.peer;
-                remoteInputsRef.current[pid] = data.payload;
+                // Host receives input from client, use conn.peer as the key (matches client's myId)
+                remoteInputsRef.current[conn.peer] = data.payload;
             }
         });
 
@@ -519,21 +519,27 @@ const GameCanvas: React.FC = () => {
     const myId = playerIdRef.current;
 
     if (isHost && stateRef.current.status === 'PLAYING') {
+        // Collect all inputs
         const myInput: PlayerInput = {
             keys: Array.from(keysRef.current),
             mouse: mouseRef.current,
             mouseDown: mouseDownRef.current,
             middleMouseDown: middleMouseDownRef.current
         };
-        const allInputs = { ...remoteInputsRef.current, [myId]: myInput };
+        // Host uses peerId (room ID) for its own input
+        const allInputs = { ...remoteInputsRef.current, [peerId]: myInput };
+        
+        // Update Game
         const newState = updateGame(stateRef.current, allInputs);
         stateRef.current = newState;
 
+        // Broadcast State
         hostConnsRef.current.forEach(c => {
              try { if(c.open) c.send({ type: 'STATE', payload: newState }); } catch(e) {}
         });
 
-        const myP = newState.players[myId];
+        // Update Host UI
+        const myP = newState.players[peerId];
         setUiState({
             status: newState.status,
             playerCount: Object.keys(newState.players).length,
@@ -541,11 +547,11 @@ const GameCanvas: React.FC = () => {
             winner: newState.winnerId || ''
         });
     } else if (!isHost && stateRef.current.status === 'PLAYING') {
+        // Client: Send Input using myId (which matches conn.peer on host side)
         if (connRef.current && connRef.current.open) {
             try {
                 connRef.current.send({
                     type: 'INPUT',
-                    playerId: myId,
                     payload: {
                         keys: Array.from(keysRef.current),
                         mouse: mouseRef.current,
@@ -559,7 +565,7 @@ const GameCanvas: React.FC = () => {
 
     draw(ctx, stateRef.current);
     requestRef.current = requestAnimationFrame(tick);
-  }, [isHost]);
+  }, [isHost, peerId]); // Dependencies
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
