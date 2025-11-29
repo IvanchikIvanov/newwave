@@ -545,6 +545,8 @@ const GameCanvas: React.FC = () => {
   // --- Game Loop ---
   const tick = useCallback(() => {
     try {
+        const tickStart = performance.now();
+        
         if (!canvasRef.current) return;
         const ctx = canvasRef.current.getContext('2d');
         if (!ctx) return;
@@ -568,7 +570,7 @@ const GameCanvas: React.FC = () => {
             const newState = updateGame(stateRef.current, allInputs);
             stateRef.current = newState;
 
-            // Broadcast State (throttled to ~30 FPS to avoid flooding the connection)
+            // Broadcast State (throttled to ~60 FPS for smoother gameplay)
             const now = Date.now();
             
             // Debug: Log inputs once per second
@@ -577,7 +579,8 @@ const GameCanvas: React.FC = () => {
                 (window as any).lastInputLog = now;
             }
             
-            if (!(window as any).lastBroadcast || now - (window as any).lastBroadcast > 33) {
+            // Reduced throttling to 16ms (~60 FPS) for better responsiveness
+            if (!(window as any).lastBroadcast || now - (window as any).lastBroadcast > 16) {
                 hostConnsRef.current.forEach(c => {
                      try { 
                          if(c.open) {
@@ -637,6 +640,18 @@ const GameCanvas: React.FC = () => {
 
     // Always Draw current state (Host computes it, Client receives it)
     draw(ctx, stateRef.current);
+    
+    // Performance monitoring (only log slow frames)
+    const tickTime = performance.now() - tickStart;
+    if (tickTime > 20 && !isHost) {
+        // Only log on client side to avoid spam
+        const now = Date.now();
+        if (!(window as any).lastSlowFrameLog || now - (window as any).lastSlowFrameLog > 2000) {
+            console.warn('[CLIENT] Slow frame detected:', tickTime.toFixed(2), 'ms - canvas may be too large');
+            (window as any).lastSlowFrameLog = now;
+        }
+    }
+    
     requestRef.current = requestAnimationFrame(tick);
     } catch (e) {
         console.error('[GAME LOOP] Error in tick:', e);
