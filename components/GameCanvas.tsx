@@ -103,24 +103,34 @@ const GameCanvas: React.FC = () => {
         console.log('New connection from:', conn.peer);
         hostConnsRef.current.push(conn);
         conn.on('open', () => {
-             console.log('Connection opened from:', conn.peer);
+             console.log('[HOST] Connection opened from client:', conn.peer);
+             console.log('[HOST] Client Peer ID (conn.peer):', conn.peer);
              const newPid = conn.peer;
              const idx = Object.keys(stateRef.current.players).length;
              
              if (!stateRef.current.players[newPid]) {
+                 console.log('[HOST] Creating player for:', newPid);
                  stateRef.current.players[newPid] = createPlayer(newPid, idx);
              }
              
+             console.log('[HOST] Current players:', Object.keys(stateRef.current.players));
+             console.log('[HOST] Player IDs match check - Expected:', newPid, 'In players:', Object.keys(stateRef.current.players).includes(newPid));
              setUiState(prev => ({ ...prev, playerCount: Object.keys(stateRef.current.players).length }));
              try {
+                console.log('[HOST] Sending initial STATE to new client:', newPid);
                 conn.send({ type: 'STATE', payload: stateRef.current });
-             } catch (e) { console.error('Send error:', e); }
+             } catch (e) { console.error('[HOST] Send error:', e); }
         });
 
         conn.on('data', (data: any) => {
             if (data.type === 'INPUT') {
                 // Host receives input from client, use conn.peer as the key (matches client's myId)
-                remoteInputsRef.current[conn.peer] = data.payload;
+                const clientId = conn.peer;
+                console.log('[HOST] Received INPUT from client ID:', clientId);
+                console.log('[HOST] Input keys:', data.payload.keys, 'Players in state:', Object.keys(stateRef.current.players));
+                console.log('[HOST] Client ID exists in players?', Object.keys(stateRef.current.players).includes(clientId));
+                remoteInputsRef.current[clientId] = data.payload;
+                console.log('[HOST] Saved input for ID:', clientId, 'All remote inputs:', Object.keys(remoteInputsRef.current));
             }
         });
 
@@ -164,7 +174,8 @@ const GameCanvas: React.FC = () => {
         connRef.current = conn;
 
         conn.on('open', () => {
-            console.log('Connection opened to:', inputRoomId);
+            console.log('[CLIENT] Connection opened to:', inputRoomId);
+            console.log('[CLIENT] My ID:', myId);
             setIsHost(false);
             setRoomId(inputRoomId);
             setUiState(prev => ({ ...prev, status: 'LOBBY' }));
@@ -172,7 +183,20 @@ const GameCanvas: React.FC = () => {
 
         conn.on('data', (data: any) => {
             if (data.type === 'STATE') {
+                // Only log status changes, not every frame
+                const prevStatus = stateRef.current.status;
                 stateRef.current = data.payload;
+                
+                // Log state updates periodically (once per second) for debugging
+                const now = Date.now();
+                if (!(window as any).lastStateLog || now - (window as any).lastStateLog > 1000) {
+                    console.log('[CLIENT] Received STATE update, status:', data.payload.status, 'players:', Object.keys(data.payload.players || {}).length);
+                    (window as any).lastStateLog = now;
+                }
+                
+                if (prevStatus !== data.payload.status) {
+                    console.log('[CLIENT] Status changed:', prevStatus, '->', data.payload.status);
+                }
                 setUiState(prev => ({
                     ...prev,
                     status: data.payload.status,
@@ -205,9 +229,17 @@ const GameCanvas: React.FC = () => {
   };
 
   const startHostedGame = () => {
+      console.log('[HOST] Starting game, players:', Object.keys(stateRef.current.players));
       stateRef.current.status = 'PLAYING';
       hostConnsRef.current.forEach(c => {
-          try { if(c.open) c.send({ type: 'STATE', payload: stateRef.current }); } catch(e){}
+          try { 
+              if(c.open) {
+                  console.log('[HOST] Sending START to client:', c.peer);
+                  c.send({ type: 'STATE', payload: stateRef.current }); 
+              }
+          } catch(e){
+              console.error('[HOST] Error sending start:', e);
+          }
       });
   };
 
@@ -512,44 +544,76 @@ const GameCanvas: React.FC = () => {
 
   // --- Game Loop ---
   const tick = useCallback(() => {
-    if (!canvasRef.current) return;
-    const ctx = canvasRef.current.getContext('2d');
-    if (!ctx) return;
+    try {
+        if (!canvasRef.current) return;
+        const ctx = canvasRef.current.getContext('2d');
+        if (!ctx) return;
 
-    const myId = playerIdRef.current;
+        const myId = playerIdRef.current;
+        // Use peerId for client too, as it matches conn.peer on host side
+        const clientId = !isHost ? peerId : myId;
 
-    if (isHost && stateRef.current.status === 'PLAYING') {
-        // Collect all inputs
+        if (isHost && stateRef.current.status === 'PLAYING') {
+            // Collect all inputs
         const myInput: PlayerInput = {
             keys: Array.from(keysRef.current),
             mouse: mouseRef.current,
             mouseDown: mouseDownRef.current,
             middleMouseDown: middleMouseDownRef.current
         };
-        // Host uses peerId (room ID) for its own input
-        const allInputs = { ...remoteInputsRef.current, [peerId]: myInput };
-        
-        // Update Game
-        const newState = updateGame(stateRef.current, allInputs);
-        stateRef.current = newState;
+            // Host uses peerId (room ID) for its own input
+            const allInputs = { ...remoteInputsRef.current, [peerId]: myInput };
+            
+            // Update Game
+            const newState = updateGame(stateRef.current, allInputs);
+            stateRef.current = newState;
 
-        // Broadcast State
-        hostConnsRef.current.forEach(c => {
-             try { if(c.open) c.send({ type: 'STATE', payload: newState }); } catch(e) {}
-        });
+            // Broadcast State (throttled to ~30 FPS to avoid flooding the connection)
+            const now = Date.now();
+            
+            // Debug: Log inputs once per second
+            if (!(window as any).lastInputLog || now - (window as any).lastInputLog > 1000) {
+                console.log('[HOST] Inputs check - Players:', Object.keys(stateRef.current.players), 'Input keys:', Object.keys(allInputs), 'Remote inputs:', Object.keys(remoteInputsRef.current));
+                (window as any).lastInputLog = now;
+            }
+            
+            if (!(window as any).lastBroadcast || now - (window as any).lastBroadcast > 33) {
+                hostConnsRef.current.forEach(c => {
+                     try { 
+                         if(c.open) {
+                             c.send({ type: 'STATE', payload: newState }); 
+                         } else {
+                             console.warn('[HOST] Connection not open for:', c.peer);
+                         }
+                     } catch(e) {
+                         console.error('[HOST] Error sending state:', e);
+                     }
+                });
+                (window as any).lastBroadcast = now;
+            }
 
-        // Update Host UI
-        const myP = newState.players[peerId];
-        setUiState({
-            status: newState.status,
-            playerCount: Object.keys(newState.players).length,
-            assetsLoaded: true,
-            winner: newState.winnerId || ''
-        });
+            // Update Host UI
+            const myP = newState.players[peerId];
+            setUiState({
+                status: newState.status,
+                playerCount: Object.keys(newState.players).length,
+                assetsLoaded: true,
+                winner: newState.winnerId || ''
+            });
     } else if (!isHost && stateRef.current.status === 'PLAYING') {
-        // Client: Send Input using myId (which matches conn.peer on host side)
+        // Client: Send Input - peerId matches conn.peer on host side
         if (connRef.current && connRef.current.open) {
             try {
+                const hasKeys = keysRef.current.size > 0;
+                const hasMouse = mouseDownRef.current || middleMouseDownRef.current;
+                // Log only when there's actual input
+                if (hasKeys || hasMouse) {
+                    const now = Date.now();
+                    if (!(window as any).lastClientInputLog || now - (window as any).lastClientInputLog > 500) {
+                        console.log('[CLIENT] Sending INPUT, peerId:', peerId, 'keys:', Array.from(keysRef.current));
+                        (window as any).lastClientInputLog = now;
+                    }
+                }
                 connRef.current.send({
                     type: 'INPUT',
                     payload: {
@@ -559,12 +623,26 @@ const GameCanvas: React.FC = () => {
                         middleMouseDown: middleMouseDownRef.current
                     }
                 });
-            } catch(e) {}
+            } catch(e) {
+                console.error('[CLIENT] Error sending input:', e);
+            }
+        } else {
+            // Log connection issue only once
+            if (!(window as any).clientConnWarningLogged) {
+                console.warn('[CLIENT] Connection issue - connRef:', !!connRef.current, 'open:', connRef.current?.open, 'peerId:', peerId);
+                (window as any).clientConnWarningLogged = true;
+            }
         }
     }
 
+    // Always Draw current state (Host computes it, Client receives it)
     draw(ctx, stateRef.current);
     requestRef.current = requestAnimationFrame(tick);
+    } catch (e) {
+        console.error('[GAME LOOP] Error in tick:', e);
+        // Continue the loop even if there's an error
+        requestRef.current = requestAnimationFrame(tick);
+    }
   }, [isHost, peerId]); // Dependencies
 
   useEffect(() => {
