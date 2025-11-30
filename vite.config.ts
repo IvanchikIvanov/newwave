@@ -13,7 +13,10 @@ export default defineConfig(({ mode }) => {
       plugins: [react()],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        'process.env.VITE_TURN_SERVER': JSON.stringify(env.VITE_TURN_SERVER),
+        'process.env.VITE_TURN_USERNAME': JSON.stringify(env.VITE_TURN_USERNAME),
+        'process.env.VITE_TURN_PASSWORD': JSON.stringify(env.VITE_TURN_PASSWORD)
       },
       resolve: {
         alias: {

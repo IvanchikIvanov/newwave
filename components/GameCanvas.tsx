@@ -61,15 +61,51 @@ const GameCanvas: React.FC = () => {
     };
   }, []);
 
+  // Get ICE servers (STUN + TURN)
+  const getIceServers = () => {
+    const servers = [
+      // STUN серверы (быстрые, прямые соединения) - пробуем первыми
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' }
+    ];
+
+    // TURN сервер (надежный, через ретрансляцию) - используем как fallback
+    const turnServer = import.meta.env.VITE_TURN_SERVER;
+    const turnUsername = import.meta.env.VITE_TURN_USERNAME;
+    const turnPassword = import.meta.env.VITE_TURN_PASSWORD;
+
+    if (turnServer && turnUsername && turnPassword) {
+      servers.push(
+        {
+          urls: `turn:${turnServer}:3478`,
+          username: turnUsername,
+          credential: turnPassword
+        },
+        {
+          urls: `turn:${turnServer}:3478?transport=tcp`,
+          username: turnUsername,
+          credential: turnPassword
+        }
+      );
+    }
+
+    return servers;
+  };
+
   const createRoom = () => {
     if (peerRef.current) peerRef.current.destroy();
     const peer = new Peer(null, { 
       debug: 2,
+      // Use explicit PeerJS server configuration for better reliability
+      host: '0.peerjs.com',
+      port: 443,
+      path: '/',
+      secure: true,
       config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
+        iceServers: getIceServers()
       }
     });
     peerRef.current = peer;
@@ -92,14 +128,18 @@ const GameCanvas: React.FC = () => {
 
     peer.on('error', (err: any) => {
         console.error('[HOST] Peer error:', err);
+        console.error('[HOST] Error details:', JSON.stringify(err, null, 2));
         if (err.type === 'peer-unavailable') {
             console.log('[HOST] Peer unavailable, retrying...');
             setUiState(prev => ({ ...prev, error: 'Сервер недоступен. Попробуйте еще раз.' }));
         } else if (err.type === 'network') {
             console.log('[HOST] Network error, check connection');
             setUiState(prev => ({ ...prev, error: 'Ошибка сети. Проверьте подключение.' }));
+        } else if (err.type === 'server-error') {
+            console.error('[HOST] Server error - PeerJS server may be down');
+            setUiState(prev => ({ ...prev, error: 'Сервер PeerJS недоступен. Попробуйте позже.' }));
         } else {
-            setUiState(prev => ({ ...prev, error: `Ошибка: ${err.message || err.type}` }));
+            setUiState(prev => ({ ...prev, error: `Ошибка подключения: ${err.message || err.type}` }));
         }
     });
 
@@ -160,11 +200,13 @@ const GameCanvas: React.FC = () => {
     
     const peer = new Peer(null, { 
       debug: 2,
+      // Use explicit PeerJS server configuration for better reliability
+      host: '0.peerjs.com',
+      port: 443,
+      path: '/',
+      secure: true,
       config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
+        iceServers: getIceServers()
       }
     });
     peerRef.current = peer;
@@ -236,14 +278,17 @@ const GameCanvas: React.FC = () => {
 
     peer.on('error', (err: any) => {
         console.error('[CLIENT] Peer error:', err);
+        console.error('[CLIENT] Error details:', JSON.stringify(err, null, 2));
         if (err.type === 'peer-unavailable') {
             setUiState(prev => ({ ...prev, error: 'Комната не найдена. Проверьте ID комнаты.', status: 'MENU' }));
         } else if (err.type === 'network') {
             setUiState(prev => ({ ...prev, error: 'Ошибка сети. Проверьте подключение.', status: 'MENU' }));
         } else if (err.type === 'server-error') {
             setUiState(prev => ({ ...prev, error: 'Сервер PeerJS недоступен. Попробуйте позже.', status: 'MENU' }));
+        } else if (err.type === 'socket-error') {
+            setUiState(prev => ({ ...prev, error: 'Ошибка WebSocket. Возможны проблемы с сетью или firewall.', status: 'MENU' }));
         } else {
-            setUiState(prev => ({ ...prev, error: `Ошибка: ${err.message || err.type}`, status: 'MENU' }));
+            setUiState(prev => ({ ...prev, error: `Ошибка подключения: ${err.message || err.type}`, status: 'MENU' }));
         }
     });
   };
