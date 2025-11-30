@@ -91,11 +91,15 @@ const GameCanvas: React.FC = () => {
     });
 
     peer.on('error', (err: any) => {
-        console.error('Peer error:', err);
+        console.error('[HOST] Peer error:', err);
         if (err.type === 'peer-unavailable') {
-            console.log('Peer unavailable, retrying...');
+            console.log('[HOST] Peer unavailable, retrying...');
+            setUiState(prev => ({ ...prev, error: 'Сервер недоступен. Попробуйте еще раз.' }));
         } else if (err.type === 'network') {
-            console.log('Network error, check connection');
+            console.log('[HOST] Network error, check connection');
+            setUiState(prev => ({ ...prev, error: 'Ошибка сети. Проверьте подключение.' }));
+        } else {
+            setUiState(prev => ({ ...prev, error: `Ошибка: ${err.message || err.type}` }));
         }
     });
 
@@ -135,11 +139,12 @@ const GameCanvas: React.FC = () => {
         });
 
         conn.on('error', (err: any) => {
-            console.error('Connection error:', err);
+            console.error('[HOST] Connection error:', err);
+            setUiState(prev => ({ ...prev, error: `Ошибка соединения: ${err.message || err.type}` }));
         });
 
         conn.on('close', () => {
-            console.log('Connection closed from:', conn.peer);
+            console.log('[HOST] Connection closed from:', conn.peer);
             const pid = conn.peer;
             delete stateRef.current.players[pid];
             delete remoteInputsRef.current[pid];
@@ -173,12 +178,22 @@ const GameCanvas: React.FC = () => {
         const conn = peer.connect(inputRoomId, { reliable: true });
         connRef.current = conn;
 
+        // Timeout for connection
+        const connectionTimeout = setTimeout(() => {
+            if (!conn.open) {
+                console.error('[CLIENT] Connection timeout');
+                setUiState(prev => ({ ...prev, error: 'Таймаут подключения. Проверьте ID комнаты и попробуйте еще раз.', status: 'MENU' }));
+                peer.destroy();
+            }
+        }, 10000); // 10 seconds timeout
+
         conn.on('open', () => {
+            clearTimeout(connectionTimeout);
             console.log('[CLIENT] Connection opened to:', inputRoomId);
             console.log('[CLIENT] My ID:', myId);
             setIsHost(false);
             setRoomId(inputRoomId);
-            setUiState(prev => ({ ...prev, status: 'LOBBY' }));
+            setUiState(prev => ({ ...prev, status: 'LOBBY', error: '' }));
         });
 
         conn.on('data', (data: any) => {
@@ -207,21 +222,26 @@ const GameCanvas: React.FC = () => {
         });
 
         conn.on('error', (err: any) => {
-            console.error('Connection error:', err);
+            clearTimeout(connectionTimeout);
+            console.error('[CLIENT] Connection error:', err);
+            setUiState(prev => ({ ...prev, error: `Ошибка подключения: ${err.message || err.type}`, status: 'MENU' }));
         });
 
         conn.on('close', () => {
-            console.log('Connection closed');
-            setUiState(prev => ({ ...prev, status: 'MENU' }));
+            clearTimeout(connectionTimeout);
+            console.log('[CLIENT] Connection closed');
+            setUiState(prev => ({ ...prev, status: 'MENU', error: 'Соединение закрыто' }));
         });
     });
 
     peer.on('error', (err: any) => {
-        console.error('Peer error:', err);
+        console.error('[CLIENT] Peer error:', err);
         if (err.type === 'peer-unavailable') {
-            setUiState(prev => ({ ...prev, error: 'Комната не найдена. Проверь ID комнаты.', status: 'MENU' }));
+            setUiState(prev => ({ ...prev, error: 'Комната не найдена. Проверьте ID комнаты.', status: 'MENU' }));
         } else if (err.type === 'network') {
-            setUiState(prev => ({ ...prev, error: 'Ошибка сети. Проверь подключение.', status: 'MENU' }));
+            setUiState(prev => ({ ...prev, error: 'Ошибка сети. Проверьте подключение.', status: 'MENU' }));
+        } else if (err.type === 'server-error') {
+            setUiState(prev => ({ ...prev, error: 'Сервер PeerJS недоступен. Попробуйте позже.', status: 'MENU' }));
         } else {
             setUiState(prev => ({ ...prev, error: `Ошибка: ${err.message || err.type}`, status: 'MENU' }));
         }
@@ -708,6 +728,11 @@ const GameCanvas: React.FC = () => {
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-white font-[monospace]">
                 <h1 className="text-6xl font-extrabold text-red-600 mb-8 tracking-tighter">DUEL ARENA</h1>
                 <div className="flex flex-col gap-4 w-64">
+                    {uiState.error && (
+                        <div className="bg-red-900/80 border border-red-600 px-4 py-3 rounded text-sm text-red-200 text-center">
+                            {uiState.error}
+                        </div>
+                    )}
                     <button onClick={createRoom} className="px-6 py-3 bg-red-700 hover:bg-red-600 text-white font-bold rounded flex items-center justify-center gap-2">
                         <Sword size={20} /> CREATE ARENA
                     </button>
@@ -716,7 +741,10 @@ const GameCanvas: React.FC = () => {
                             type="text" 
                             placeholder="ROOM ID" 
                             value={inputRoomId}
-                            onChange={(e) => setInputRoomId(e.target.value)}
+                            onChange={(e) => {
+                                setInputRoomId(e.target.value);
+                                setUiState(prev => ({ ...prev, error: '' })); // Clear error when typing
+                            }}
                             className="flex-1 bg-zinc-800 border border-zinc-600 px-3 py-2 text-sm text-center tracking-widest uppercase focus:outline-none focus:border-red-500"
                         />
                     </div>

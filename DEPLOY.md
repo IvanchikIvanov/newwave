@@ -52,3 +52,4 @@ npm run preview
 
 После деплоя открой сайт на телефоне или используй DevTools браузера (F12 → Toggle device toolbar).
 
+
