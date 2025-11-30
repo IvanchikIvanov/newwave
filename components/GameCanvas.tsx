@@ -73,9 +73,9 @@ const GameCanvas: React.FC = () => {
     ];
 
     // TURN сервер (надежный, через ретрансляцию) - используем как fallback
-    const turnServer = import.meta.env.VITE_TURN_SERVER;
-    const turnUsername = import.meta.env.VITE_TURN_USERNAME;
-    const turnPassword = import.meta.env.VITE_TURN_PASSWORD;
+    const turnServer = (process.env as any).VITE_TURN_SERVER;
+    const turnUsername = (process.env as any).VITE_TURN_USERNAME;
+    const turnPassword = (process.env as any).VITE_TURN_PASSWORD;
 
     if (turnServer && turnUsername && turnPassword) {
       servers.push(
@@ -83,12 +83,12 @@ const GameCanvas: React.FC = () => {
           urls: `turn:${turnServer}:3478`,
           username: turnUsername,
           credential: turnPassword
-        },
+        } as any,
         {
           urls: `turn:${turnServer}:3478?transport=tcp`,
           username: turnUsername,
           credential: turnPassword
-        }
+        } as any
       );
     }
 
@@ -97,13 +97,9 @@ const GameCanvas: React.FC = () => {
 
   const createRoom = () => {
     if (peerRef.current) peerRef.current.destroy();
+    // Let PeerJS use default servers (more reliable, auto-selects available server)
     const peer = new Peer(null, { 
       debug: 2,
-      // Use explicit PeerJS server configuration for better reliability
-      host: '0.peerjs.com',
-      port: 443,
-      path: '/',
-      secure: true,
       config: {
         iceServers: getIceServers()
       }
@@ -198,13 +194,9 @@ const GameCanvas: React.FC = () => {
     if (!inputRoomId) return;
     if (peerRef.current) peerRef.current.destroy();
     
+    // Let PeerJS use default servers (more reliable, auto-selects available server)
     const peer = new Peer(null, { 
       debug: 2,
-      // Use explicit PeerJS server configuration for better reliability
-      host: '0.peerjs.com',
-      port: 443,
-      path: '/',
-      secure: true,
       config: {
         iceServers: getIceServers()
       }
