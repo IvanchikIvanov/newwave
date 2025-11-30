@@ -97,13 +97,34 @@ const GameCanvas: React.FC = () => {
 
   const createRoom = () => {
     if (peerRef.current) peerRef.current.destroy();
-    // Let PeerJS use default servers (more reliable, auto-selects available server)
-    const peer = new Peer(null, { 
+    
+    // Require custom PeerJS server configuration
+    const peerjsHost = (process.env as any).VITE_PEERJS_HOST;
+    const peerjsPort = (process.env as any).VITE_PEERJS_PORT;
+    const peerjsKey = (process.env as any).VITE_PEERJS_KEY || 'peerjs';
+    
+    if (!peerjsHost || !peerjsPort) {
+      const errorMsg = 'PeerJS server не настроен. Проверьте переменные окружения VITE_PEERJS_HOST и VITE_PEERJS_PORT.';
+      console.error('[HOST]', errorMsg);
+      setUiState(prev => ({ ...prev, error: errorMsg }));
+      return;
+    }
+    
+    const peerConfig: any = {
       debug: 2,
+      host: peerjsHost,
+      port: parseInt(peerjsPort),
+      path: '/',
+      secure: false, // HTTP for custom server
+      key: peerjsKey,
       config: {
         iceServers: getIceServers()
       }
-    });
+    };
+    
+    console.log('[HOST] Using custom PeerJS server:', peerjsHost, ':', peerjsPort);
+    
+    const peer = new Peer(null, peerConfig);
     peerRef.current = peer;
 
     peer.on('open', (id: string) => {
@@ -194,13 +215,33 @@ const GameCanvas: React.FC = () => {
     if (!inputRoomId) return;
     if (peerRef.current) peerRef.current.destroy();
     
-    // Let PeerJS use default servers (more reliable, auto-selects available server)
-    const peer = new Peer(null, { 
+    // Require custom PeerJS server configuration
+    const peerjsHost = (process.env as any).VITE_PEERJS_HOST;
+    const peerjsPort = (process.env as any).VITE_PEERJS_PORT;
+    const peerjsKey = (process.env as any).VITE_PEERJS_KEY || 'peerjs';
+    
+    if (!peerjsHost || !peerjsPort) {
+      const errorMsg = 'PeerJS server не настроен. Проверьте переменные окружения VITE_PEERJS_HOST и VITE_PEERJS_PORT.';
+      console.error('[CLIENT]', errorMsg);
+      setUiState(prev => ({ ...prev, error: errorMsg, status: 'MENU' }));
+      return;
+    }
+    
+    const peerConfig: any = {
       debug: 2,
+      host: peerjsHost,
+      port: parseInt(peerjsPort),
+      path: '/',
+      secure: false, // HTTP for custom server
+      key: peerjsKey,
       config: {
         iceServers: getIceServers()
       }
-    });
+    };
+    
+    console.log('[CLIENT] Using custom PeerJS server:', peerjsHost, ':', peerjsPort);
+    
+    const peer = new Peer(null, peerConfig);
     peerRef.current = peer;
 
     peer.on('open', (myId: string) => {
